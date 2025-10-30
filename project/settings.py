@@ -37,7 +37,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'app'
+    'app',
+    "django_celery_results",
+    "django_celery_beat",
 ]
 
 MIDDLEWARE = [
@@ -85,18 +87,6 @@ DATABASES = {
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
 ]
 
 
@@ -122,7 +112,54 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+import os
 # Celery broker/backend settings
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_TIMEZONE = 'Asia/Kolkata'
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = "django-db"   # using django-celery-results
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+
+# Optional: default retry settings (used by manual retry logic too)
+CELERY_TASK_DEFAULT_MAX_RETRIES = 5
+CELERY_TASK_DEFAULT_RETRY_DELAY = 30  # seconds
+
+# settings.py (append)
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    "weather-every-30-min": {
+        "task": "app.tasks.weather_notify",
+        "schedule": 1800.0,  # seconds (1800 = 30 minutes)
+        "args": ("Bengaluru", None),
+    },
+    # or use crontab
+    "weather-daily-8am": {
+        "task": "app.tasks.weather_notify",
+        "schedule": crontab(hour=8, minute=0),
+        "args": ("Bengaluru", "user@example.com"),
+    },
+}
+
+# OpenWeather API Key
+OPENWEATHER_API_KEY = "025deb1d08ba043bd19facf40e1539a4"
+
+
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+EMAIL_TIMEOUT = 20  # seconds (optional)
+
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'sandeshshettyy08@gmail.com'        # 🔹 Replace with your Gmail
+EMAIL_HOST_PASSWORD = 'bwwg nuwk stge sfws'       # 🔹 Replace with your Gmail App Password
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+EMAIL_TIMEOUT = 20  # seconds (optional)

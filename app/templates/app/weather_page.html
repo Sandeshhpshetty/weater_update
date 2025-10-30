@@ -1,0 +1,140 @@
+<!-- templates/app/weather_page.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Periodic Weather — updates every 30 minutes</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; max-width:900px; margin:30px auto; padding:20px; }
+    h1 { margin-bottom:6px; }
+    form#addForm { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
+    input[type="text"], input[type="email"] { padding:8px; font-size:14px; }
+    button { padding:8px 12px; cursor:pointer; }
+    .city { border:1px solid #ddd; padding:12px; margin-bottom:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; }
+    .meta { color:#666; font-size:13px; margin-top:6px; }
+    .message { margin:8px 0; color:#900; }
+  </style>
+</head>
+<body>
+  <h1>Periodic Weather — updates every 30 minutes</h1>
+
+  <!-- ADD CITY: regular form POST (no AJAX) to avoid redirect/JSON mismatch -->
+  <form id="addForm" method="post" action="{% url 'add_city' %}">
+    {% csrf_token %}
+    <input name="name" placeholder="City name (e.g. Mumbai)" required />
+    <input name="email" placeholder="Email (optional)" />
+    <button type="submit">Add city</button>
+  </form>
+
+  <div id="message" class="message"></div>
+
+  <div id="cities">
+    {% if cities %}
+      {% for city in cities %}
+        <div class="city" data-city-id="{{ city.id }}"
+             data-trigger-url="{% url 'trigger_now' city.id %}"
+             data-remove-url="{% url 'remove_city' city.id %}">
+          <div>
+            <strong>{{ city.name }}</strong>
+            <div class="meta">
+              Email: {{ city.email|default:"(none)" }} • Added {{ city.created_at }}
+            </div>
+            <div class="meta">
+              {% if city.last_updated %}
+                Last: {{ city.last_updated }} • {{ city.last_temp }}°C, {{ city.last_desc }}
+              {% else %}
+                No data yet
+              {% endif %}
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px;">
+            <button class="btn-trigger">Run now</button>
+            <button class="btn-remove">Remove</button>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p>No cities added yet.</p>
+    {% endif %}
+  </div>
+
+  <script>
+    // Helper: show short messages
+    function showMessage(text, isError=false, timeout=4000) {
+      const el = document.getElementById('message');
+      el.textContent = text || '';
+      el.style.color = isError ? '#900' : '#080';
+      if (timeout) setTimeout(()=> el.textContent = '', timeout);
+    }
+
+    // CSRF helper for Django AJAX
+    function getCSRF() {
+      const name = 'csrftoken';
+      const cookies = document.cookie.split(';').map(s=>s.trim());
+      for (let c of cookies) {
+        if (c.startsWith(name + '=')) return decodeURIComponent(c.split('=')[1]);
+      }
+      return '';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Trigger "Run now" buttons (AJAX)
+      document.querySelectorAll('.city').forEach(card => {
+        const triggerBtn = card.querySelector('.btn-trigger');
+        const removeBtn = card.querySelector('.btn-remove');
+        const triggerUrl = card.dataset.triggerUrl;
+        const removeUrl = card.dataset.removeUrl;
+
+        triggerBtn.addEventListener('click', async () => {
+          triggerBtn.disabled = true;
+          showMessage('Triggering update...', false, 3000);
+          try {
+            const res = await fetch(triggerUrl, {
+              method: 'POST',
+              headers: {
+                'X-CSRFToken': getCSRF()
+              }
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              showMessage('Trigger failed: ' + (text || `HTTP ${res.status}`), true);
+            } else {
+              const j = await res.json();
+              showMessage('Triggered (task id: ' + (j.task_id || 'n/a') + ')');
+            }
+          } catch (err) {
+            showMessage('Trigger error: ' + err, true);
+          } finally {
+            triggerBtn.disabled = false;
+          }
+        });
+
+        removeBtn.addEventListener('click', async () => {
+          if (!confirm('Remove city and stop updates?')) return;
+          removeBtn.disabled = true;
+          try {
+            const res = await fetch(removeUrl, {
+              method: 'POST',
+              headers: { 'X-CSRFToken': getCSRF() }
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              showMessage('Remove failed: ' + (text || `HTTP ${res.status}`), true);
+              removeBtn.disabled = false;
+              return;
+            }
+            const j = await res.json();
+            showMessage('Removed city ' + j.id);
+            card.remove();
+          } catch (err) {
+            showMessage('Remove error: ' + err, true);
+            removeBtn.disabled = false;
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
